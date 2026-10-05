@@ -128,6 +128,9 @@ var uF={mvp:gl.getUniformLocation(pF,'uMVP'),model:gl.getUniformLocation(pF,'uMo
   cam:gl.getUniformLocation(pF,'uCam'),la:gl.getUniformLocation(pF,'uLightA'),
   sc:gl.getUniformLocation(pF,'uSC'),sr:gl.getUniformLocation(pF,'uSR')};
 
+var cv=document.createElement('canvas');cv.width=480;cv.height=320;
+document.body.appendChild(cv);
+var gl=cv.getContext('webgl',{antialias:true});
 // ---------- geometry ----------
 // f0=+Y f1=+X f2=-X f3=+Z f4=-Z f5=-Y ; (tu x tv)=n, CCW dari luar
 var FN=[[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
@@ -234,9 +237,6 @@ function makeSymbols(){
 }
 var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
 
-var cv=document.createElement('canvas');cv.width=480;cv.height=320;
-document.body.appendChild(cv);
-var gl=cv.getContext('webgl',{antialias:true});
 var pD=prog(VS_D,FS_D), pF=prog(VS_F,FS_F);
 var aD={pos:gl.getAttribLocation(pD,'aPos'),nrm:gl.getAttribLocation(pD,'aNormal'),
   uv:gl.getAttribLocation(pD,'aUV'),face:gl.getAttribLocation(pD,'aFace')};
