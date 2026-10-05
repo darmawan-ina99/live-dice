@@ -347,13 +347,8 @@ function step(dt){
       if(d.bounce>=2&&d.pos[1]<0.9){
         var Mq2=m4trs(d.q,[0,0,0]);
         function wyOf(nn){return Mq2[1]*nn[0]+Mq2[5]*nn[1]+Mq2[9]*nn[2];}
-        var tw=wyOf(FN[d.target]);
-        var bf2=d.target;
-        if(tw<0.55){   // wajah target masih menghadap bawah: tegakkan wajah teratas dulu
-          var best2=-2;
-          for(var fi=0;fi<6;fi++){var w2=wyOf(FN[fi]);if(w2>best2){best2=w2;bf2=fi;}}
-          tw=best2;
-        }
+        var tw=-2, bf2=0;
+        for(var fi=0;fi<6;fi++){var w2=wyOf(FN[fi]);if(w2>tw){tw=w2;bf2=fi;}}
         d.flat=tw;
         if(tw<0.999){
           var nn3=FN[bf2];
@@ -373,7 +368,14 @@ function step(dt){
         d.state='settle';d.st=0;d.sq=d.q;
         d.spos=[d.pos[0],d.pos[1],d.pos[2]];
         d.tpos=[d.pos[0], 0.5, d.pos[2]];   // berhenti di titik jatuh — tak digeser ke tengah
-        d.tq=QFACE[d.target];   // rata sempurna: wajah menempel penuh di beludru
+        // hasil = wajah yang benar-benar menghadap atas saat mendarat (tanpa dibalik)
+        var Ml2=m4trs(d.q,[0,0,0]);
+        var fUp=0,fUpw=-2;
+        for(var fu=0;fu<6;fu++){var nn4=FN[fu];
+          var wy4=Ml2[1]*nn4[0]+Ml2[5]*nn4[1]+Ml2[9]*nn4[2];
+          if(wy4>fUpw){fUpw=wy4;fUp=fu;}}
+        d.target=fUp;
+        d.tq=QFACE[fUp];   // rata sempurna: wajah yang terlihat = wajah yang dihitung
         // bila menindih dadu yang sudah diam: geser tipis saja, nyaris tak terlihat
         for(var j2=0;j2<N;j2++){if(j2===i)continue;var o=dice[j2];
           if(o.state==='fly')continue;
