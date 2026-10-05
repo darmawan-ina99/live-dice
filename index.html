@@ -1,6 +1,421 @@
 <!DOCTYPE html>
-<html lang="id"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>THE DICE — Domino Match</title></head>
-<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#1a0508;color:#e8c66a;font-family:sans-serif">
-<div style="text-align:center"><h1>🎲 THE DICE</h1><p>Domino Match — coming soon</p></div></body></html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>The Dice Luxe</title>
+<style>
+body{margin:0;background:#0a0004;overflow:hidden;font-family:Georgia,serif;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100vw;height:100vh;touch-action:manipulation}
+#res{position:fixed;top:14px;left:0;right:0;text-align:center;color:#f5d78a;font-size:26px;text-shadow:0 2px 8px #000;pointer-events:none;letter-spacing:2px}
+#hint{position:fixed;bottom:16px;left:0;right:0;text-align:center;color:#b89; font-size:14px;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="res"></div>
+<div id="hint">ketuk layar untuk melempar</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+"use strict";
+var ZIP_URL="https://base44.app/api/apps/6aa913f2ea9bd0d7e8b3bd36/files/mp/public/6aa913f2ea9bd0d7e8b3bd36/7fc304b69_TheDice_Luxe_3D_v9.zip";
+var cv=document.getElementById('c');
+var gl=cv.getContext('webgl',{antialias:true});
+var DPR=Math.min(window.devicePixelRatio||1,2);
+// ---------- mat/quat ----------
+function m4mul(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
+function m4persp(fov,asp,n,f){var t=1/Math.tan(fov/2);return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]);}
+function m4look(e,c,u){
+  var zx=e[0]-c[0],zy=e[1]-c[1],zz=e[2]-c[2];var zl=Math.hypot(zx,zy,zz);zx/=zl;zy/=zl;zz/=zl;
+  var xx=u[1]*zz-u[2]*zy,xy=u[2]*zx-u[0]*zz,xz=u[0]*zy-u[1]*zx;var xl=Math.hypot(xx,xy,xz);xx/=xl;xy/=xl;xz/=xl;
+  var yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  return new Float32Array([xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+    -(xx*e[0]+xy*e[1]+xz*e[2]),-(yx*e[0]+yy*e[1]+yz*e[2]),-(zx*e[0]+zy*e[1]+zz*e[2]),1]);
+}
+function qmul(a,b){return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],
+  a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],
+  a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],
+  a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];}
+function qaxis(ax,ang){var l=Math.hypot(ax[0],ax[1],ax[2]);var s=Math.sin(ang/2)/l;return [ax[0]*s,ax[1]*s,ax[2]*s,Math.cos(ang/2)];}
+function qnorm(q){var l=Math.hypot(q[0],q[1],q[2],q[3]);return [q[0]/l,q[1]/l,q[2]/l,q[3]/l];}
+function qrotY(yaw){return qaxis([0,1,0],yaw);}
+function qcompose(r,yaw){return qnorm(qmul(qrotY(yaw||0),r));}
+function qmat(q){var x=q[0],y=q[1],z=q[2],w=q[3];
+  return new Float32Array([1-2*(y*y+z*z),2*(x*y+z*w),2*(x*z-y*w),0,
+   2*(x*y-z*w),1-2*(x*x+z*z),2*(y*z+x*w),0,
+   2*(x*z+y*w),2*(y*z-x*w),1-2*(x*x+y*y),0,0,0,0,1]);}
+function m4trs(q,p){var m=qmat(q);m[12]=p[0];m[13]=p[1];m[14]=p[2];return m;}
+function qslerp(a,b,t){var d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3];var bb=b;
+  if(d<0){bb=[-b[0],-b[1],-b[2],-b[3]];d=-d;}
+  if(d>0.9995){var r=[];for(var i=0;i<4;i++)r[i]=a[i]+(bb[i]-a[i])*t;return qnorm(r);}
+  var th=Math.acos(d),s=Math.sin(th);var wa=Math.sin((1-t)*th)/s,wb=Math.sin(t*th)/s;
+  return [a[0]*wa+bb[0]*wb,a[1]*wa+bb[1]*wb,a[2]*wa+bb[2]*wb,a[3]*wa+bb[3]*wb];}
+
+// ---------- face-up quats: f0=+Y f1=+X f2=-X f3=+Z f4=-Z f5=-Y ----------
+var QFACE=[ [0,0,0,1], qaxis([0,0,1],Math.PI/2), qaxis([0,0,1],-Math.PI/2),
+  qaxis([1,0,0],-Math.PI/2), qaxis([1,0,0],Math.PI/2), qaxis([1,0,0],Math.PI) ];
+
+// ---------- shaders (port persis dari DiceRenderer native) ----------
+var VS_D="attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;attribute float aFace;"+
+"uniform mat4 uMVP;uniform mat4 uModel;"+
+"varying vec3 vWorldPos;varying vec3 vWorldN;varying vec3 vLocalPos;varying vec2 vUV;varying float vFace;"+
+"void main(){vec4 wp=uModel*vec4(aPos,1.0);vWorldPos=wp.xyz;vWorldN=(uModel*vec4(aNormal,0.0)).xyz;"+
+"vLocalPos=aPos;vUV=aUV;vFace=aFace;gl_Position=uMVP*vec4(aPos,1.0);}";
+var FS_D="precision highp float;"+
+"uniform vec3 uCam;uniform vec3 uLightA;uniform vec3 uLightB;"+
+"uniform sampler2D uTex;uniform sampler2D uTex2;uniform float uSym;"+
+"varying vec3 vWorldPos;varying vec3 vWorldN;varying vec3 vLocalPos;varying vec2 vUV;varying float vFace;"+
+"float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719))) * 43758.5453); }"+
+"void main(){"+
+"  vec3 N = normalize(vWorldN);\n"+
+"  vec3 V = normalize(uCam - vWorldPos);\n"+
+"  vec3 a = abs(vLocalPos);\n"+
+"  float edge = max(max(min(a.x,a.y), min(a.y,a.z)), min(a.x,a.z));\n"+
+"  float bevel = smoothstep(0.30, 0.50, edge) * 0.40;\n"+
+"  float idx = floor(vFace + 0.5);\n"+
+"  float col = mod(idx, 3.0);\n"+
+"  float row = floor(idx / 3.0);\n"+
+"  vec2 uv = (vUV - 0.5) * 1.18 + 0.5;\n"+
+"  float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);\n"+
+"  vec2 auv = (vec2(col, row) + clamp(uv, 0.001, 0.999)) / vec2(3.0, 2.0);\n"+
+"  vec4 an = (uSym > 0.5) ? texture2D(uTex2, auv) : texture2D(uTex, auv);\n"+
+"  float am = an.a * inside;\n"+
+"  float gl_ = hash(floor(vLocalPos * 40.0)) * 0.02;\n"+
+"  vec3 ivory = vec3(0.95, 0.91, 0.82) + gl_;\n"+
+"  vec3 base = mix(ivory, an.rgb, am);\n"+
+"  base *= mix(1.0, 0.80, bevel);\n"+
+"  vec3 L1 = normalize(uLightA - vWorldPos);\n"+
+"  vec3 L2 = normalize(uLightB - vWorldPos);\n"+
+"  float d1 = max(dot(N, L1), 0.0);\n"+
+"  float d2 = max(dot(N, L2), 0.0);\n"+
+"  vec3 H1 = normalize(L1 + V);\n"+
+"  vec3 H2 = normalize(L2 + V);\n"+
+"  float shininess = mix(90.0, 30.0, am);\n"+
+"  float s1 = pow(max(dot(N, H1), 0.0), shininess);\n"+
+"  float s2 = pow(max(dot(N, H2), 0.0), shininess * 0.6);\n"+
+"  float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);\n"+
+"  vec3 refl = reflect(-V, N);\n"+
+"  vec3 env = mix(vec3(0.20,0.04,0.05), vec3(1.0,0.90,0.85), smoothstep(-0.4, 0.9, refl.y));\n"+
+"  float glaze = 0.55 + 0.45 * (1.0 - am);\n"+
+"  vec3 c = base * (0.30 + 0.80 * d1 + 0.32 * d2);\n"+
+"  c += vec3(1.0, 0.96, 0.9) * (s1 * 0.75 + s2 * 0.35) * glaze;\n"+
+"  c += env * fres * 0.40 * glaze;\n"+
+"  c = pow(c, vec3(0.95));\n"+
+"  gl_FragColor = vec4(c, 1.0);\n}";
+var VS_F="attribute vec3 aPos;uniform mat4 uMVP;uniform mat4 uModel;varying vec3 vWorldPos;"+
+"void main(){vec4 wp=uModel*vec4(aPos,1.0);vWorldPos=wp.xyz;gl_Position=uMVP*vec4(aPos,1.0);}";
+var FS_F="precision highp float;"+
+"uniform vec3 uCam;uniform vec3 uLightA;uniform vec3 uSC[4];uniform float uSR[4];varying vec3 vWorldPos;"+
+"float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }\n"+
+"float noise(vec2 p){\n"+
+"  vec2 i = floor(p); vec2 f = fract(p);\n"+
+"  f = f*f*(3.0-2.0*f);\n"+
+"  return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y);\n"+
+"}\n"+
+"void main(){\n"+
+"  vec2 p = vWorldPos.xz;\n"+
+"  float fib = noise(p * 95.0) * 0.5 + noise(p * 210.0) * 0.3 + noise(p * 32.0) * 0.2;\n"+
+"  vec3 V = normalize(uCam - vWorldPos);\n"+
+"  vec3 N = normalize(vec3((noise(p*70.0)-0.5)*0.45, 1.0, (noise(p*70.0+9.0)-0.5)*0.45));\n"+
+"  vec3 L = normalize(uLightA - vWorldPos);\n"+
+"  float sheen = pow(1.0 - max(dot(N, V), 0.0), 2.2);\n"+
+"  float diff = max(dot(N, L), 0.0);\n"+
+"  vec3 deep = vec3(0.16, 0.012, 0.030);\n"+
+"  vec3 lite = vec3(0.56, 0.060, 0.090);\n"+
+"  vec3 col = mix(deep, lite, fib * 0.65 + diff * 0.45);\n"+
+"  col += vec3(0.85, 0.20, 0.22) * sheen * 0.34;\n"+
+"  float d = length(p);\n"+
+"  float spot = smoothstep(7.5, 0.4, d);\n"+
+"  col *= 0.30 + 1.05 * spot;\n"+
+"  for (int i = 0; i < 4; i++) {\n"+
+"    float sh = smoothstep(uSR[i] * 0.35, uSR[i] * 1.35, length(p - uSC[i].xz));\n"+
+"    col *= mix(0.25, 1.0, sh);\n"+
+"  }\n"+
+"  gl_FragColor = vec4(col, 1.0);\n}";
+
+function sh(t,src){var s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+function prog(v,f){var p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;}
+var pD=prog(VS_D,FS_D), pF=prog(VS_F,FS_F);
+var aD={pos:gl.getAttribLocation(pD,'aPos'),nrm:gl.getAttribLocation(pD,'aNormal'),
+  uv:gl.getAttribLocation(pD,'aUV'),face:gl.getAttribLocation(pD,'aFace')};
+var uD={mvp:gl.getUniformLocation(pD,'uMVP'),model:gl.getUniformLocation(pD,'uModel'),
+  cam:gl.getUniformLocation(pD,'uCam'),la:gl.getUniformLocation(pD,'uLightA'),lb:gl.getUniformLocation(pD,'uLightB'),
+  tex:gl.getUniformLocation(pD,'uTex'),tex2:gl.getUniformLocation(pD,'uTex2'),sym:gl.getUniformLocation(pD,'uSym')};
+var aF={pos:gl.getAttribLocation(pF,'aPos')};
+var uF={mvp:gl.getUniformLocation(pF,'uMVP'),model:gl.getUniformLocation(pF,'uModel'),
+  cam:gl.getUniformLocation(pF,'uCam'),la:gl.getUniformLocation(pF,'uLightA'),
+  sc:gl.getUniformLocation(pF,'uSC'),sr:gl.getUniformLocation(pF,'uSR')};
+
+// ---------- geometry ----------
+// f0=+Y f1=+X f2=-X f3=+Z f4=-Z f5=-Y ; (tu x tv)=n, CCW dari luar
+var FN=[[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
+var FT=[[[0,0,1],[1,0,0]],[[0,1,0],[0,0,1]],[[0,0,1],[0,1,0]],[[1,0,0],[0,1,0]],[[0,1,0],[1,0,0]],[[1,0,0],[0,0,1]]];
+var vdata=[],idata=[];
+vdata=[];
+for(var f=0;f<6;f++){
+  var n=FN[f],tu=FT[f][0],tv=FT[f][1],base=vdata.length/11;
+  var c=[[-1,-1],[1,-1],[1,1],[-1,1]];
+  var uv=[[0,0],[1,0],[1,1],[0,1]];
+  for(var i=0;i<4;i++){
+    var px=0.5*n[0]+0.5*c[i][0]*tu[0]+0.5*c[i][1]*tv[0];
+    var py=0.5*n[1]+0.5*c[i][0]*tu[1]+0.5*c[i][1]*tv[1];
+    var pz=0.5*n[2]+0.5*c[i][0]*tu[2]+0.5*c[i][1]*tv[2];
+    vdata.push(px,py,pz, n[0],n[1],n[2], uv[i][0],uv[i][1], f);
+  }
+  idata.push(base,base+1,base+2, base,base+2,base+3);
+}
+// interleaved: pos3 nrm3 uv2 face1 = 9 floats
+var vbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vdata),gl.STATIC_DRAW);
+var ibuf=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibuf);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(idata),gl.STATIC_DRAW);
+// lantai
+var fdata=[],fidx=[];var FS=25;
+var fc=[[-FS,FS],[FS,FS],[FS,-FS],[-FS,-FS]];
+for(var i=0;i<4;i++)fdata.push(fc[i][0],0,fc[i][1]);
+fidx.push(0,1,2, 0,2,3);
+var fbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,fbuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(fdata),gl.STATIC_DRAW);
+var fibuf=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,fibuf);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(fidx),gl.STATIC_DRAW);
+// ---------- tekstur ----------
+function upTex(src){
+  var t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  return t;
+}
+// fallback hewan: emoji di atas transparan (badan gading dari shader)
+function fallbackAnimals(){
+  var c=document.createElement('canvas');c.width=768;c.height=512;
+  var x=c.getContext('2d');var em=['\uD83C\uDF73','\uD83E\uDD80','\uD83E\uDD90','\uD83D\uDC1F','\uD83D\uDC14','\uD83E\uDD8C'];
+  for(var r=0;r<2;r++)for(var q=0;q<3;q++){
+    x.font='150px serif';x.textAlign='center';x.textBaseline='middle';
+    x.fillText(em[r*3+q], q*256+128, r*256+134);
+  }
+  return upTex(c);
+}
+// lambang: hitam + bingkai emas + badge emas (gaya referensi x1..x25 + bom)
+function makeSymbols(){
+  var c=document.createElement('canvas');c.width=768;c.height=512;
+  var x=c.getContext('2d');
+  var lab=[['x1','x2','x5'],['x10','x25','BOMB']];
+  for(var r=0;r<2;r++)for(var q=0;q<3;q++){
+    var cx=q*256+128, cy=r*256+128;
+    var g=x.createLinearGradient(0,r*256,0,r*256+256);
+    g.addColorStop(0,'#191219');g.addColorStop(1,'#0b070d');
+    x.fillStyle=g;x.fillRect(q*256,r*256,256,256);
+    // bingkai emas ganda
+    var fg=x.createLinearGradient(q*256,r*256,q*256+256,r*256+256);
+    fg.addColorStop(0,'#f5dd96');fg.addColorStop(0.5,'#c9a24a');fg.addColorStop(1,'#8a6a20');
+    x.strokeStyle=fg;x.lineWidth=9;x.strokeRect(q*256+16,r*256+16,224,224);
+    x.globalAlpha=0.7;x.lineWidth=3;x.strokeRect(q*256+32,r*256+32,192,192);x.globalAlpha=1;
+    // segitiga sudut
+    x.fillStyle=fg;
+    x.beginPath();x.moveTo(q*256+16,r*256+16);x.lineTo(q*256+52,r*256+16);x.lineTo(q*256+16,r*256+52);x.fill();
+    x.beginPath();x.moveTo(q*256+240,r*256+16);x.lineTo(q*256+204,r*256+16);x.lineTo(q*256+240,r*256+52);x.fill();
+    x.beginPath();x.moveTo(q*256+16,r*256+240);x.lineTo(q*256+52,r*256+240);x.lineTo(q*256+16,r*256+204);x.fill();
+    x.beginPath();x.moveTo(q*256+240,r*256+240);x.lineTo(q*256+204,r*256+240);x.lineTo(q*256+240,r*256+204);x.fill();
+    // badge lingkaran gelap + cincin emas
+    x.beginPath();x.arc(cx,cy,80,0,7);
+    x.fillStyle='#050308';x.fill();
+    x.strokeStyle=fg;x.lineWidth=6;x.stroke();
+    if(lab[r][q]==='BOMB'){
+      // bom hitam glossy + sumbu menyala
+      x.beginPath();x.arc(cx,cy+8,40,0,7);
+      var bg=x.createRadialGradient(cx-14,cy-6,4,cx,cy+8,42);
+      bg.addColorStop(0,'#5a5f6e');bg.addColorStop(0.35,'#23262e');bg.addColorStop(1,'#0a0b10');
+      x.fillStyle=bg;x.fill();
+      x.strokeStyle='#1c1e26';x.lineWidth=2;x.stroke();
+      x.beginPath();x.moveTo(cx+18,cy-24);x.quadraticCurveTo(cx+40,cy-52,cx+18,cy-66);
+      x.strokeStyle='#caa24a';x.lineWidth=4;x.stroke();
+      var sg=x.createRadialGradient(cx+18,cy-70,1,cx+18,cy-70,16);
+      sg.addColorStop(0,'#fff6c0');sg.addColorStop(0.4,'#ffb020');sg.addColorStop(1,'rgba(255,80,0,0)');
+      x.fillStyle=sg;x.beginPath();x.arc(cx+18,cy-70,16,0,7);x.fill();
+      x.fillStyle='rgba(255,255,255,0.85)';
+      x.beginPath();x.arc(cx-14,cy-8,5,0,7);x.fill();
+    } else {
+      var tg=x.createLinearGradient(0,cy-40,0,cy+40);
+      tg.addColorStop(0,'#fff3c4');tg.addColorStop(0.45,'#f7cf5e');tg.addColorStop(1,'#9a731c');
+      x.fillStyle=tg;x.font='bold italic 58px Georgia,serif';
+      x.textAlign='center';x.textBaseline='middle';
+      x.shadowColor='rgba(255,210,90,0.55)';x.shadowBlur=14;
+      x.fillText(lab[r][q],cx,cy+2);
+      x.shadowBlur=0;
+    }
+  }
+  return upTex(c);
+}
+var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
+// coba ambil animals.png asli (fotorealistis) dari APK v9 publik
+if(window.JSZip){
+  fetch(ZIP_URL).then(function(r){return r.arrayBuffer();}).then(function(b){
+    return JSZip.loadAsync(b).then(function(z){
+var f=z.file('res/raw/animals.png');
+      return f.async('blob');
+    });
+  }).then(function(blob){
+    return createImageBitmap(blob);
+  }).then(function(bmp){
+    texAnimal=upTex(bmp);
+  }).catch(function(e){ console.log('fallback hewan dipakai', e); });
+}
+
+// ---------- state ----------
+var SPACING=1.15, N=4, G=22;
+var dice=[];
+for(var i=0;i<N;i++){
+  dice.push({i:i,pos:[(i-1.5)*SPACING,0.5,0],vel:[0,0,0],q:qcompose(QFACE[i===3?5:i],[0,1,0],0),
+    w:[0,1,0],ws:0,state:'rest',t:0,target:0,sq:null,spos:null,st:0,slot:[(i-1.5)*SPACING,0.5,0]});
+}
+var camB=0, camZ=0, tGlobal=0, shown=true;
+
+function allRest(){for(var i=0;i<N;i++)if(dice[i].state!=='rest')return false;return true;}
+
+function roll(){
+  if(!allRest())return;
+  shown=false;
+  for(var i=0;i<N;i++){var d=dice[i];
+    d.state='fly';d.t=0;d.target=Math.floor(Math.random()*6);
+    d.pos=[d.slot[0]+(Math.random()-0.5)*0.4,0.5,0];
+    d.vel=[(Math.random()-0.5)*1.4, 7.5+Math.random()*2.5, 1.2+Math.random()*1.6];
+    var ax=[Math.random()-0.5,Math.random()-0.5,Math.random()-0.5];
+    var l=Math.hypot(ax[0],ax[1],ax[2])||1;
+    d.w=[ax[0]/l,ax[1]/l,ax[2]/l];d.ws=4+Math.random()*6;
+    d.bounce=0;
+  }
+  document.getElementById('res').textContent='';
+}
+
+function step(dt){
+  tGlobal+=dt;
+  for(var i=0;i<N;i++){var d=dice[i];
+    if(d.state==='fly'){
+      d.t+=dt;
+      d.vel[1]-=G*dt;
+      d.pos[0]+=d.vel[0]*dt;d.pos[1]+=d.vel[1]*dt;d.pos[2]+=d.vel[2]*dt;
+      d.q=qnorm(qmul(qaxis(d.w,d.ws*dt),d.q));
+      if(d.pos[1]<0.5&&d.vel[1]<0){
+        d.pos[1]=0.5;d.vel[1]*=-0.42;d.vel[0]*=0.72;d.vel[2]*=0.72;d.ws*=0.6;d.bounce++;
+      }
+      if(d.t>2.1&&Math.abs(d.vel[1])<1.6&&d.bounce>=1){
+        d.state='settle';d.st=0;d.sq=d.q;
+        d.spos=[d.pos[0],d.pos[1],d.pos[2]];
+        var jit=0.22;
+        d.tpos=[d.slot[0]+(Math.random()-0.5)*jit*2, 0.5, d.slot[2]+(Math.random()-0.5)*jit];
+        d.tq=qcompose(QFACE[d.target],[0,1,0],(Math.random()-0.5)*0.5);
+      }
+    } else if(d.state==='settle'){
+      d.st+=dt/0.3;
+      var e=d.st>=1?1:1-Math.pow(1-d.st,3);
+      d.q=qslerp(d.sq,d.tq,e);
+      d.pos[0]=d.spos[0]+(d.tpos[0]-d.spos[0])*e;
+      d.pos[1]=d.spos[1]+(d.tpos[1]-d.spos[1])*e;
+      d.pos[2]=d.spos[2]+(d.tpos[2]-d.spos[2])*e;
+      if(d.st>=1){d.state='rest';d.q=d.tq;d.pos=d.tpos;}
+    }
+  }
+  // hasil + getar triple
+  if(!shown&&allRest()){
+    shown=true;
+    var em=['\uD83C\uDF73','\uD83E\uDD80','\uD83E\uDD90','\uD83D\uDC1F','\uD83D\uDC14','\uD83E\uDD8C'];
+    var mul=['x1','x2','x5','x10','x25','\uD83D\uDCA3'];
+    var s=em[dice[0].target]+' '+em[dice[1].target]+' '+em[dice[2].target]+'   |   '+mul[dice[3].target];
+    document.getElementById('res').textContent=s;
+    if(dice[0].target===dice[1].target&&dice[1].target===dice[2].target&&navigator.vibrate)navigator.vibrate(120);
+  }
+  // kamera: 0=top-down 1=sinematik; zoom setelah tegak
+  var bt=allRest()?0:1;
+  camB+=(bt-camB)*Math.min(1,dt*2.0);
+  var zt=(bt===0&&camB<0.2)?1:0;
+  camZ+= (zt? (1-camZ)*Math.min(1,dt*0.9) : (0-camZ)*Math.min(1,dt*4.0));
+}
+
+// ---------- render ----------
+function resize(){
+  var w=Math.floor(cv.clientWidth*DPR),h=Math.floor(cv.clientHeight*DPR);
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+}
+function render(){
+  resize();
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.clearColor(0.043,0.0,0.02,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+
+  var asp=cv.width/cv.height, fov=40*Math.PI/180;
+  var span=N*SPACING+1.0;
+  var D=Math.max(7, span*1.12/(2*Math.tan(fov/2)*Math.min(asp,1)));
+  var zoomF=1-0.5*camZ;
+  var eyeT=[0,D*zoomF,0.001], ctrT=[0,0,0], upT=[0,0,-1];
+  var eyeC=[Math.sin(tGlobal*0.6)*1.5,6.2,8.6], ctrC=[0,0.6,0], upC=[0,1,0];
+  var b=camB, e=b*b*(3-2*b);
+  function lp(a,c,t){return a+(c-a)*t;}
+  var eye=[lp(eyeT[0],eyeC[0],e),lp(eyeT[1],eyeC[1],e),lp(eyeT[2],eyeC[2],e)];
+  var ctr=[lp(ctrT[0],ctrC[0],e),lp(ctrT[1],ctrC[1],e),lp(ctrT[2],ctrC[2],e)];
+  var upv=[lp(upT[0],upC[0],e),lp(upT[1],upC[1],e),lp(upT[2],upC[2],e)];
+var P=m4persp(fov,asp,0.1,60), Vm=m4look(eye,ctr,upv);
+
+  // lantai
+  gl.useProgram(pF);
+  gl.bindBuffer(gl.ARRAY_BUFFER,fbuf);
+  gl.enableVertexAttribArray(aF.pos);
+  gl.vertexAttribPointer(aF.pos,3,gl.FLOAT,false,12,0);
+  gl.uniformMatrix4fv(uF.mvp,false,m4mul(P,Vm));
+  gl.uniformMatrix4fv(uF.model,false,new Float32Array(16).fill(0).map(function(_,i){return i%5===0?1:0;}));
+  gl.uniform3fv(uF.cam,new Float32Array(eye));
+  gl.uniform3fv(uF.la,new Float32Array([4,9,5]));
+  var sc=[],sr=[];
+  for(var i=0;i<N;i++){sc.push(dice[i].pos[0],dice[i].pos[1],dice[i].pos[2]);sr.push(0.75+(dice[i].pos[1]-0.5)*0.25);}
+  gl.uniform3fv(uF.sc,new Float32Array(sc));
+  gl.uniform1fv(uF.sr,new Float32Array(sr));
+  gl.disable(gl.CULL_FACE);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,fibuf);
+  gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+  gl.enable(gl.CULL_FACE);
+
+  // dadu
+  gl.useProgram(pD);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibuf);
+  gl.enableVertexAttribArray(aD.pos);
+  gl.vertexAttribPointer(aD.pos,3,gl.FLOAT,false,36,0);
+  gl.enableVertexAttribArray(aD.nrm);
+  gl.vertexAttribPointer(aD.nrm,3,gl.FLOAT,false,36,12);
+  gl.enableVertexAttribArray(aD.uv);
+  gl.vertexAttribPointer(aD.uv,2,gl.FLOAT,false,36,24);
+  gl.enableVertexAttribArray(aD.face);
+  gl.vertexAttribPointer(aD.face,1,gl.FLOAT,false,36,32);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texAnimal);gl.uniform1i(uD.tex,0);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,texSymbol);gl.uniform1i(uD.tex2,1);
+  gl.uniform3fv(uD.cam,new Float32Array(eye));
+  gl.uniform3fv(uD.la,new Float32Array([4,9,5]));
+  gl.uniform3fv(uD.lb,new Float32Array([-6,5,-8]));
+  for(var i=0;i<N;i++){var d=dice[i];
+    var M=m4trs(d.q,d.pos);
+    gl.uniformMatrix4fv(uD.model,false,M);
+    gl.uniformMatrix4fv(uD.mvp,false,m4mul(P,m4mul(Vm,M)));
+    gl.uniform1f(uD.sym,i===3?1:0);
+    gl.drawElements(gl.TRIANGLES,idata.length,gl.UNSIGNED_SHORT,0);
+  }
+  requestAnimationFrame(frame);
+}
+var last=0;
+function frame(ts){
+  var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
+  step(dt);render();
+}
+document.addEventListener('touchstart',function(ev){ev.preventDefault();roll();},{passive:false});
+document.addEventListener('mousedown',function(){roll();});
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
