@@ -284,6 +284,33 @@ probeAt(196,120,'dadu0-pojo-atas-kiri');
 probeAt(240,160,'antara-dadu1-2');
 probeAt(332,160,'dadu3-tengah-kubus');
 probeAt(240,25,'lantai-jauh');
+
+// ====== UJI PENENTU: culling ON, dua winding ======
+function drawAll(){for(var i=0;i<4;i++){
+  var M=m4trs([0,0,0,1],[px[i],0.5,0]);
+  gl.uniformMatrix4fv(uD.model,false,M);
+  gl.uniformMatrix4fv(uD.mvp,false,m4mul(P,m4mul(Vm,M)));
+  gl.uniform1f(uD.sym,i===3?1:0);
+  gl.drawElements(gl.TRIANGLES,idata.length,gl.UNSIGNED_SHORT,0);
+}}
+var sc=sr=0;
+gl.enable(gl.CULL_FACE);
+out.push('--- CULL ON, winding ASLI (0,1,2):');
+gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+drawAll();
+probeAt(152,160,'winding-asli-dadu0');
+// balik winding runtime: ubah index buffer
+var idata2=idata.slice();
+for(var f=0;f<6;f++){var b=f*4;
+  idata2[f*6+0]=b;idata2[f*6+1]=b+2;idata2[f*6+2]=b+1;
+  idata2[f*6+3]=b;idata2[f*6+4]=b+3;idata2[f*6+5]=b+2;}
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibuf);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(idata2),gl.STATIC_DRAW);
+out.push('--- CULL ON, winding DIBALIK (0,2,1):');
+gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+drawAll();
+probeAt(152,160,'winding-balik-dadu0');
+gl.disable(gl.CULL_FACE);
 r.textContent = out.length ? out.join('\n') : 'tanpa error GL';
 }
 </script></body></html>
