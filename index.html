@@ -165,7 +165,7 @@ for(var f=0;f<6;f++){
     var pz=0.5*n[2]+0.5*c[i][0]*tu[2]+0.5*c[i][1]*tv[2];
     vdata.push(px,py,pz, n[0],n[1],n[2], uv[i][0],uv[i][1], f);
   }
-  idata.push(base,base+1,base+2, base,base+2,base+3);
+  idata.push(base,base+2,base+1, base,base+3,base+2);
 }
 // interleaved: pos3 nrm3 uv2 face1 = 9 floats
 var vbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
