@@ -39,7 +39,7 @@ function qmul(a,b){return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],
 function qaxis(ax,ang){var l=Math.hypot(ax[0],ax[1],ax[2]);var s=Math.sin(ang/2)/l;return [ax[0]*s,ax[1]*s,ax[2]*s,Math.cos(ang/2)];}
 function qnorm(q){var l=Math.hypot(q[0],q[1],q[2],q[3]);return [q[0]/l,q[1]/l,q[2]/l,q[3]/l];}
 function qrotY(yaw){return qaxis([0,1,0],yaw);}
-function qcompose(r,yaw){return qnorm(qmul(qrotY(yaw||0),r));}
+function qcompose(r,ax,yaw){return qnorm(qmul(qaxis(ax||[0,1,0],yaw||0),r));}
 function qmat(q){var x=q[0],y=q[1],z=q[2],w=q[3];
   return new Float32Array([1-2*(y*y+z*z),2*(x*y+z*w),2*(x*z-y*w),0,
    2*(x*y-z*w),1-2*(x*x+z*z),2*(y*z+x*w),0,
@@ -165,7 +165,7 @@ for(var f=0;f<6;f++){
     var pz=0.5*n[2]+0.5*c[i][0]*tu[2]+0.5*c[i][1]*tv[2];
     vdata.push(px,py,pz, n[0],n[1],n[2], uv[i][0],uv[i][1], f);
   }
-  idata.push(base,base+2,base+1, base,base+3,base+2);
+  idata.push(base,base+1,base+2, base,base+2,base+3);
 }
 // interleaved: pos3 nrm3 uv2 face1 = 9 floats
 var vbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
