@@ -4,6 +4,10 @@
 window.onerror=function(m,u,l){document.getElementById('r').textContent='ERR baris '+l+': '+m;return false;};
 </script>
 <script>
+var cv=document.createElement('canvas');cv.width=480;cv.height=320;
+document.body.appendChild(cv);
+var gl=cv.getContext('webgl',{antialias:true});
+if(!gl){document.getElementById('r').textContent='WEBGL NULL';}else{
 // ---------- mat/quat ----------
 function m4mul(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
 function m4persp(fov,asp,n,f){var t=1/Math.tan(fov/2);return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]);}
@@ -120,20 +124,6 @@ function sh(t,src){var s=gl.createShader(t);gl.shaderSource(s,src);gl.compileSha
 function prog(v,f){var p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));
   gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
   if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;}
-var pD=prog(VS_D,FS_D), pF=prog(VS_F,FS_F);
-var aD={pos:gl.getAttribLocation(pD,'aPos'),nrm:gl.getAttribLocation(pD,'aNormal'),
-  uv:gl.getAttribLocation(pD,'aUV'),face:gl.getAttribLocation(pD,'aFace')};
-var uD={mvp:gl.getUniformLocation(pD,'uMVP'),model:gl.getUniformLocation(pD,'uModel'),
-  cam:gl.getUniformLocation(pD,'uCam'),la:gl.getUniformLocation(pD,'uLightA'),lb:gl.getUniformLocation(pD,'uLightB'),
-  tex:gl.getUniformLocation(pD,'uTex'),tex2:gl.getUniformLocation(pD,'uTex2'),sym:gl.getUniformLocation(pD,'uSym')};
-var aF={pos:gl.getAttribLocation(pF,'aPos')};
-var uF={mvp:gl.getUniformLocation(pF,'uMVP'),model:gl.getUniformLocation(pF,'uModel'),
-  cam:gl.getUniformLocation(pF,'uCam'),la:gl.getUniformLocation(pF,'uLightA'),
-  sc:gl.getUniformLocation(pF,'uSC'),sr:gl.getUniformLocation(pF,'uSR')};
-
-var cv=document.createElement('canvas');cv.width=480;cv.height=320;
-document.body.appendChild(cv);
-var gl=cv.getContext('webgl',{antialias:true});
 // ---------- geometry ----------
 // f0=+Y f1=+X f2=-X f3=+Z f4=-Z f5=-Y ; (tu x tv)=n, CCW dari luar
 var FN=[[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
@@ -150,7 +140,7 @@ for(var f=0;f<6;f++){
     var pz=0.5*n[2]+0.5*c[i][0]*tu[2]+0.5*c[i][1]*tv[2];
     vdata.push(px,py,pz, n[0],n[1],n[2], uv[i][0],uv[i][1], f);
   }
-  idata.push(base,base+1,base+2, base,base+2,base+3);
+  idata.push(base,base+2,base+1, base,base+3,base+2);
 }
 // interleaved: pos3 nrm3 uv2 face1 = 9 floats
 var vbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
@@ -239,36 +229,26 @@ function makeSymbols(){
   return upTex(c);
 }
 var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
-
 var pD=prog(VS_D,FS_D), pF=prog(VS_F,FS_F);
 var aD={pos:gl.getAttribLocation(pD,'aPos'),nrm:gl.getAttribLocation(pD,'aNormal'),
   uv:gl.getAttribLocation(pD,'aUV'),face:gl.getAttribLocation(pD,'aFace')};
 var uD={mvp:gl.getUniformLocation(pD,'uMVP'),model:gl.getUniformLocation(pD,'uModel'),
   cam:gl.getUniformLocation(pD,'uCam'),la:gl.getUniformLocation(pD,'uLightA'),lb:gl.getUniformLocation(pD,'uLightB'),
   tex:gl.getUniformLocation(pD,'uTex'),tex2:gl.getUniformLocation(pD,'uTex2'),sym:gl.getUniformLocation(pD,'uSym')};
-var aF={pos:gl.getAttribLocation(pF,'aPos')};
-var uF={mvp:gl.getUniformLocation(pF,'uMVP'),model:gl.getUniformLocation(pF,'uModel'),
-  cam:gl.getUniformLocation(pF,'uCam'),la:gl.getUniformLocation(pF,'uLightA'),
-  sc:gl.getUniformLocation(pF,'uSC'),sr:gl.getUniformLocation(pF,'uSR')};
 var out=[];
 function E(tag){var e=gl.getError(); if(e) out.push('GLERR '+tag+': 0x'+e.toString(16));}
 var r=document.getElementById('r');
-
-// kamera top-down persis render()
 var asp=480/320, fov=40*Math.PI/180;
 var span=4*1.15+1.0;
 var D=Math.max(7, span*1.12/(2*Math.tan(fov/2)*Math.min(asp,1)));
 var eye=[0,D,0.001], ctr=[0,0,0], up=[0,0,-1];
 var P=m4persp(fov,asp,0.1,60), Vm=m4look(eye,ctr,up);
-out.push('D='+D.toFixed(2)+' asp='+asp.toFixed(2));
-
+out.push('D='+D.toFixed(2)+' aD.pos='+aD.pos+' aD.face='+aD.face+' uD.mvp='+(uD.mvp!==null));
 gl.viewport(0,0,480,320);
 gl.clearColor(0.043,0.0,0.02,1);
 gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 gl.enable(gl.DEPTH_TEST);
 E('init');
-
-// dadu TANPA lantai dulu, cull OFF — uji paling murni
 gl.useProgram(pD);
 gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibuf);
@@ -296,11 +276,11 @@ for(var i=0;i<4;i++){
   gl.drawElements(gl.TRIANGLES,idata.length,gl.UNSIGNED_SHORT,0);
   E('draw'+i);
 }
-// probe pixel di atas dadu 0 (kiri) dan tengah (bukan area dadu)
 var probe=new Uint8Array(4);
 function probeAt(x,y,tag){gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,probe);
-  out.push('probe '+tag+' ('+x+','+y+'): r='+probe[0]+' g='+probe[1]+' b='+probe[2]);}
-probeAt(30,160,'dadu0-y0.5');
-probeAt(240,160,'antara-dadu');
-r.textContent = out.join('\n') || 'tanpa error GL';
+  out.push('probe '+tag+': r='+probe[0]+' g='+probe[1]+' b='+probe[2]);}
+probeAt(30,160,'dadu0');
+probeAt(240,160,'tengah');
+r.textContent = out.length ? out.join('\n') : 'tanpa error GL';
+}
 </script></body></html>
