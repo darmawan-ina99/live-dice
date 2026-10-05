@@ -153,18 +153,27 @@ var uF={mvp:gl.getUniformLocation(pF,'uMVP'),model:gl.getUniformLocation(pF,'uMo
 var FN=[[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
 var FT=[[[0,0,1],[1,0,0]],[[0,1,0],[0,0,1]],[[0,0,1],[0,1,0]],[[1,0,0],[0,1,0]],[[0,1,0],[1,0,0]],[[1,0,0],[0,0,1]]];
 var vdata=[],idata=[];
-vdata=[];
+// port setia buildCube() native v9: rounded box, grid 15x15/wajah, radius 0.17
+var IN=0.33, R=0.17;
 for(var f=0;f<6;f++){
   var n=FN[f],tu=FT[f][0],tv=FT[f][1],base=vdata.length/9;
-  var c=[[-1,-1],[1,-1],[1,1],[-1,1]];
-  var uv=[[0,0],[1,0],[1,1],[0,1]];
-  for(var i=0;i<4;i++){
-    var px=0.5*n[0]+0.5*c[i][0]*tu[0]+0.5*c[i][1]*tv[0];
-    var py=0.5*n[1]+0.5*c[i][0]*tu[1]+0.5*c[i][1]*tv[1];
-    var pz=0.5*n[2]+0.5*c[i][0]*tu[2]+0.5*c[i][1]*tv[2];
-    vdata.push(px,py,pz, n[0],n[1],n[2], uv[i][0],uv[i][1], f);
+  for(var j=0;j<=14;j++)for(var i=0;i<=14;i++){
+    var u=i/14,v=j/14,x=2*u-1,y=2*v-1;
+    var px=0.5*n[0]+0.5*x*tu[0]+0.5*y*tv[0];
+    var py=0.5*n[1]+0.5*x*tu[1]+0.5*y*tv[1];
+    var pz=0.5*n[2]+0.5*x*tu[2]+0.5*y*tv[2];
+    var cx=Math.max(-IN,Math.min(IN,px));
+    var cy=Math.max(-IN,Math.min(IN,py));
+    var cz=Math.max(-IN,Math.min(IN,pz));
+    var dx=px-cx,dy=py-cy,dz=pz-cz;
+    var L=Math.hypot(dx,dy,dz),NN;
+    if(L<1e-6)NN=n; else NN=[dx/L,dy/L,dz/L];
+    vdata.push(cx+R*NN[0],cy+R*NN[1],cz+R*NN[2], NN[0],NN[1],NN[2], u,v, f);
   }
-  idata.push(base,base+1,base+2, base,base+2,base+3);
+  for(var j=0;j<14;j++)for(var i=0;i<14;i++){
+    var a=base+j*15+i,b=a+1,e2=a+15,dq=e2+1;
+    idata.push(a,b,dq, a,dq,e2);
+  }
 }
 // interleaved: pos3 nrm3 uv2 face1 = 9 floats
 var vbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbuf);
