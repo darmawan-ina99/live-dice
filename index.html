@@ -15,7 +15,6 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation}
 <canvas id="c"></canvas>
 <div id="res"></div>
 <div id="hint">ketuk layar untuk melempar</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 "use strict";
 var ZIP_URL="https://base44.app/api/apps/6aa913f2ea9bd0d7e8b3bd36/files/mp/public/6aa913f2ea9bd0d7e8b3bd36/7fc304b69_TheDice_Luxe_3D_v9.zip";
@@ -254,19 +253,12 @@ function makeSymbols(){
   return upTex(c);
 }
 var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
-// coba ambil animals.png asli (fotorealistis) dari APK v9 publik
-if(window.JSZip){
-  fetch(ZIP_URL).then(function(r){return r.arrayBuffer();}).then(function(b){
-    return JSZip.loadAsync(b).then(function(z){
-var f=z.file('res/raw/animals.png');
-      return f.async('blob');
-    });
-  }).then(function(blob){
-    return createImageBitmap(blob);
-  }).then(function(bmp){
-    texAnimal=upTex(bmp);
-  }).catch(function(e){ console.log('fallback hewan dipakai', e); });
-}
+// ambil animals.png asli (fotorealistis) dari repo ini (origin sama, tanpa CORS)
+(function(){
+  var img=new Image();
+  img.onload=function(){texAnimal=upTex(img);};
+  img.src='animals.png';
+})();
 
 // ---------- state ----------
 var SPACING=1.15, N=4, G=22;
