@@ -264,9 +264,13 @@ function makeSymbols(){
 var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
 // ambil animals.png asli (fotorealistis) dari repo ini (origin sama, tanpa CORS)
 (function(){
-  var img=new Image();
-  img.onload=function(){texAnimal=upTex(img);};
-  img.src='animals.png';
+  function loadTex(src,nxt){
+    var img=new Image();
+    img.onload=function(){texAnimal=upTex(img);};
+    img.onerror=function(){ if(nxt)loadTex(nxt,null); };
+    img.src=src;
+  }
+  loadTex('animals.webp','animals.png');
 })();
 
 // ---------- state ----------
