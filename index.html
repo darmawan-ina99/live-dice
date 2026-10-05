@@ -151,7 +151,7 @@ var uF={mvp:gl.getUniformLocation(pF,'uMVP'),model:gl.getUniformLocation(pF,'uMo
 // ---------- geometry ----------
 // f0=+Y f1=+X f2=-X f3=+Z f4=-Z f5=-Y ; (tu x tv)=n, CCW dari luar
 var FN=[[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
-var FT=[[[0,0,1],[1,0,0]],[[0,1,0],[0,0,1]],[[0,0,1],[0,1,0]],[[1,0,0],[0,1,0]],[[0,1,0],[1,0,0]],[[1,0,0],[0,0,1]]];
+var FT=[[[-1,0,0],[0,0,1]],[[0,1,0],[0,0,1]],[[0,0,1],[0,1,0]],[[1,0,0],[0,1,0]],[[0,1,0],[1,0,0]],[[1,0,0],[0,0,1]]];
 var vdata=[],idata=[];
 // port setia buildCube() native v9: rounded box, grid 15x15/wajah, radius 0.17
 var IN=0.33, R=0.17;
