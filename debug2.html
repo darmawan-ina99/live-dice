@@ -279,8 +279,11 @@ for(var i=0;i<4;i++){
 var probe=new Uint8Array(4);
 function probeAt(x,y,tag){gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,probe);
   out.push('probe '+tag+': r='+probe[0]+' g='+probe[1]+' b='+probe[2]);}
-probeAt(30,160,'dadu0');
-probeAt(240,160,'tengah');
+probeAt(152,160,'dadu0-tengah-kubus');
+probeAt(196,120,'dadu0-pojo-atas-kiri');
+probeAt(240,160,'antara-dadu1-2');
+probeAt(332,160,'dadu3-tengah-kubus');
+probeAt(240,25,'lantai-jauh');
 r.textContent = out.length ? out.join('\n') : 'tanpa error GL';
 }
 </script></body></html>
