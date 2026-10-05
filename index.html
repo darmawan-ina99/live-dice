@@ -321,9 +321,18 @@ function step(dt){
       d.vel[1]-=G*dt;
       d.pos[0]+=d.vel[0]*dt;d.pos[1]+=d.vel[1]*dt;d.pos[2]+=d.vel[2]*dt;
       d.q=qnorm(qmul(qaxis(d.w,d.ws*dt),d.q));
-      if(d.pos[1]<0.5&&d.vel[1]<0){
-        d.pos[1]=0.5;d.vel[1]*=-0.48;d.vel[0]*=0.78;d.vel[2]*=0.78;d.ws*=0.65;d.bounce++;
-        d.vel[0]+=(Math.random()-0.5)*0.3;   // keacakan sentuhan meja
+      // cek sudut terendah: dadu menubruk beludru lewat sudut/tepi, tak pernah menembus lantai
+      if(d.vel[1]<0){
+        var lo2=1e9,Mq=m4trs(d.q,[0,0,0]);
+        for(var cxi=0;cxi<8;cxi++){
+          var lx=(cxi&1)?0.5:-0.5, ly=(cxi&2)?0.5:-0.5, lz=(cxi&4)?0.5:-0.5;
+          var wy=d.pos[1]+Mq[1]*lx+Mq[5]*ly+Mq[9]*lz;
+          if(wy<lo2)lo2=wy;
+        }
+        if(lo2<0){
+          d.pos[1]-=lo2;d.vel[1]*=-0.48;d.vel[0]*=0.78;d.vel[2]*=0.78;d.ws*=0.65;d.bounce++;
+          d.vel[0]+=(Math.random()-0.5)*0.3;   // keacakan sentuhan meja
+        }
       }
       if(d.bounce>=1){   // setelah pantulan pertama, dileret pelan ke jalur slotnya
         d.vel[0]+=(d.slot[0]-d.pos[0])*2.2*dt;
@@ -334,7 +343,7 @@ function step(dt){
         d.state='settle';d.st=0;d.sq=d.q;
         d.spos=[d.pos[0],d.pos[1],d.pos[2]];
         d.tpos=[d.slot[0]+(Math.random()-0.5)*0.12, 0.5, d.slot[2]+(Math.random()-0.5)*0.60];
-        d.tq=qcompose(QFACE[d.target],[0,1,0],(Math.random()-0.5)*0.5);
+        d.tq=QFACE[d.target];   // rata sempurna: wajah menempel penuh di beludru, sejajar
         // pisahkan target dari posisi/target dadu lain agar tak bertindih
         for(var j2=0;j2<N;j2++){if(j2===i)continue;var o=dice[j2];
           if(o.state==='fly')continue;
