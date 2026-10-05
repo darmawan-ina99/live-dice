@@ -259,7 +259,10 @@ function makeSymbols(){
       x.shadowBlur=0;
     }
   }
-  return upTex(c);
+  // konvensi UV di wajah dadu me-cermin gambar; teks dibalik agar terbaca benar
+  var f=document.createElement('canvas');f.width=768;f.height=512;
+  var fx=f.getContext('2d');fx.translate(768,0);fx.scale(-1,1);fx.drawImage(c,0,0);
+  return upTex(f);
 }
 var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
 // ambil animals.png asli (fotorealistis) dari repo ini (origin sama, tanpa CORS)
@@ -274,7 +277,7 @@ var texAnimal=fallbackAnimals(), texSymbol=makeSymbols();
 })();
 
 // ---------- state ----------
-var SPACING=1.15, N=4, G=22;
+var SPACING=1.38, N=4, G=22;   // jalur lebih lega: antar dadu tak mungkin bertindih
 var dice=[];
 for(var i=0;i<N;i++){
   dice.push({i:i,pos:[(i-1.5)*SPACING,0.5,0],vel:[0,0,0],q:qcompose(QFACE[i===3?5:i],[0,1,0],0),
@@ -313,9 +316,21 @@ function step(dt){
       if(d.t>2.1&&Math.abs(d.vel[1])<1.6&&d.bounce>=1){
         d.state='settle';d.st=0;d.sq=d.q;
         d.spos=[d.pos[0],d.pos[1],d.pos[2]];
-        var jit=0.22;
-        d.tpos=[d.slot[0]+(Math.random()-0.5)*jit*2, 0.5, d.slot[2]+(Math.random()-0.5)*jit];
+        d.tpos=[d.slot[0]+(Math.random()-0.5)*0.12, 0.5, d.slot[2]+(Math.random()-0.5)*0.60];
         d.tq=qcompose(QFACE[d.target],[0,1,0],(Math.random()-0.5)*0.5);
+        // pisahkan target dari posisi/target dadu lain agar tak bertindih
+        for(var j2=0;j2<N;j2++){if(j2===i)continue;var o=dice[j2];
+          if(o.state==='fly')continue;
+          var ox=o.state==='rest'?o.pos[0]:o.tpos[0], oz=o.state==='rest'?o.pos[2]:o.tpos[2];
+          var ddx=d.tpos[0]-ox, ddz=d.tpos[2]-oz;
+          var nx=1.16-Math.abs(ddx), nz=1.16-Math.abs(ddz);
+          if(nx>0&&nz>0){
+            if(nx<nz)d.tpos[0]+=(ddx>=0?nx:-nx)*0.9;
+            else d.tpos[2]+=(ddz>=0?nz:-nz)*0.9;
+          }
+        }
+        d.tpos[0]=Math.max(d.slot[0]-0.06,Math.min(d.slot[0]+0.06,d.tpos[0]));
+        d.tpos[2]=Math.max(-0.30,Math.min(0.30,d.tpos[2]));
       }
     } else if(d.state==='settle'){
       d.st+=dt/0.3;
@@ -326,6 +341,23 @@ function step(dt){
       d.pos[2]=d.spos[2]+(d.tpos[2]-d.spos[2])*e;
       if(d.st>=1){d.state='rest';d.q=d.tq;d.pos=d.tpos;}
     }
+  }
+  // dorong lembut bila lintasan settle mendekat tumpuk dengan dadu lain
+  for(var pi=0;pi<2;pi++)for(var i2=0;i2<N;i2++)for(var j3=i2+1;j3<N;j3++){
+    var a=dice[i2],b2=dice[j3];
+    if(a.state==='fly'||b2.state==='fly')continue;
+    var ma=a.state!=='rest', mb=b2.state!=='rest';
+    if(!ma&&!mb)continue;
+    var ddx2=b2.pos[0]-a.pos[0], ddz2=b2.pos[2]-a.pos[2];
+    var px2=1.08-Math.abs(ddx2), pz2=1.08-Math.abs(ddz2);
+    if(px2<=0||pz2<=0)continue;
+    var sh;
+    if(px2<pz2){sh=(ddx2>=0?1:-1)*px2/(ma&&mb?2:1);
+      if(ma){a.pos[0]-=sh;a.tpos[0]-=sh;a.spos[0]-=sh;}
+      if(mb){b2.pos[0]+=sh;b2.tpos[0]+=sh;b2.spos[0]+=sh;}}
+    else{sh=(ddz2>=0?1:-1)*pz2/(ma&&mb?2:1);
+      if(ma){a.pos[2]-=sh;a.tpos[2]-=sh;a.spos[2]-=sh;}
+      if(mb){b2.pos[2]+=sh;b2.tpos[2]+=sh;b2.spos[2]+=sh;}}
   }
   // hasil + getar triple
   if(!shown&&allRest()){
@@ -356,11 +388,30 @@ function render(){
   gl.enable(gl.DEPTH_TEST);
   gl.enable(gl.CULL_FACE);
 
-  var asp=cv.width/cv.height, fov=40*Math.PI/180;
-  var span=N*SPACING+1.0;
-  var D=Math.max(7, span*1.12/(2*Math.tan(fov/2)*Math.min(asp,1)));
-  var zoomF=1-0.5*camZ;
-  var eyeT=[0,D*zoomF,0.001], ctrT=[0,0,0], upT=[0,0,-1];
+  // kamera proporsional: elevasi 57 derajat (konstanta native), fovy 50.
+  // solver mencari jarak terdekat yang membuat SEMUA dadu muat di layar,
+  // dihitung pada zoom terketat sehingga tidak pernah terpotong.
+  var asp=cv.width/cv.height, fov=50*Math.PI/180, el=57*Math.PI/180;
+  var zoomF=1-0.35*camZ;
+  var halfX=(N-1)/2*SPACING+0.74, halfZ=0.92, loY=-0.02, hiY=1.12;
+  function projMax(D){
+    var eye=[0,D*Math.sin(el),D*Math.cos(el)],ctr=[0,0.4,0],up=[0,1,0];
+    var M=m4mul(m4persp(fov,asp,0.1,60),m4look(eye,ctr,up));
+    var m=0;
+    for(var xi=-1;xi<=1;xi+=2)for(var yi=0;yi<=1;yi++)for(var zi=-1;zi<=1;zi+=2){
+      var x=xi*halfX,y=yi?hiY:loY,z=zi*halfZ;
+      var cx=M[0]*x+M[4]*y+M[8]*z+M[12],cy=M[1]*x+M[5]*y+M[9]*z+M[13],
+          cw=M[3]*x+M[7]*y+M[11]*z+M[15];
+      m=Math.max(m,Math.abs(cx/cw)/0.94,Math.abs(cy/cw)/(cy>0?0.88:0.95));
+    }
+    return m;
+  }
+  var D0=Math.max(4,(halfX+1)/(2*Math.tan(fov/2)*Math.min(asp,1)));
+  var Dmin=D0;
+  for(var k=0;k<10;k++){var mm=projMax(Dmin);if(Math.abs(mm-1)<0.02)break;
+    Dmin*=Math.pow(mm,mm>1?1.06:0.85);}
+  var D=Dmin/0.65;
+  var eyeT=[0,D*Math.sin(el)*zoomF,D*Math.cos(el)*zoomF], ctrT=[0,0.4,0], upT=[0,1,0];
   var eyeC=[Math.sin(tGlobal*0.6)*1.5,6.2,8.6], ctrC=[0,0.6,0], upC=[0,1,0];
   var b=camB, e=b*b*(3-2*b);
   function lp(a,c,t){return a+(c-a)*t;}
