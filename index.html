@@ -80,8 +80,8 @@ var FS_D="precision highp float;"+
 "  vec2 auv = (vec2(col, row) + clamp(uv, 0.001, 0.999)) / vec2(3.0, 2.0);\n"+
 "  vec4 an = (uSym > 0.5) ? texture2D(uTex2, auv) : texture2D(uTex, auv);\n"+
 "  float am = an.a * inside;\n"+
-"  float gl_ = hash(floor(vLocalPos * 40.0)) * 0.02;\n"+
-"  vec3 ivory = vec3(0.95, 0.91, 0.82) + gl_;\n"+
+"  float gnoise = hash(floor(vLocalPos * 40.0)) * 0.02;\n"+
+"  vec3 ivory = vec3(0.95, 0.91, 0.82) + gnoise;\n"+
 "  vec3 base = mix(ivory, an.rgb, am);\n"+
 "  base *= mix(1.0, 0.80, bevel);\n"+
 "  vec3 L1 = normalize(uLightA - vWorldPos);\n"+
@@ -156,7 +156,7 @@ var FT=[[[0,0,1],[1,0,0]],[[0,1,0],[0,0,1]],[[0,0,1],[0,1,0]],[[1,0,0],[0,1,0]],
 var vdata=[],idata=[];
 vdata=[];
 for(var f=0;f<6;f++){
-  var n=FN[f],tu=FT[f][0],tv=FT[f][1],base=vdata.length/11;
+  var n=FN[f],tu=FT[f][0],tv=FT[f][1],base=vdata.length/9;
   var c=[[-1,-1],[1,-1],[1,1],[-1,1]];
   var uv=[[0,0],[1,0],[1,1],[0,1]];
   for(var i=0;i<4;i++){
