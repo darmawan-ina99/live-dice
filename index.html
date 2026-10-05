@@ -368,6 +368,32 @@ function step(dt){
       if(d.st>=1){d.state='rest';d.q=d.tq;d.pos=d.tpos;}
     }
   }
+  // tabrakan antar dadu: benturan menimbulkan tekanan yang saling menjauhkan (impuls elastis)
+  for(var ci=0;ci<N;ci++)for(var cj=ci+1;cj<N;cj++){
+    var A=dice[ci],B=dice[cj];
+    var af=A.state==='fly',bf=B.state==='fly';
+    if(!af&&!bf)continue;                       // pasangan diam diurus pemisah settle
+    var ex=B.pos[0]-A.pos[0],ey=B.pos[1]-A.pos[1],ez=B.pos[2]-A.pos[2];
+    if(Math.abs(ex)>1.02||Math.abs(ey)>1.02||Math.abs(ez)>1.02)continue;
+    var dl=Math.hypot(ex,ey,ez)||1e-4;
+    var nx2=ex/dl,ny2=ey/dl,nz2=ez/dl;
+    var vn=(B.vel[0]-A.vel[0])*nx2+(B.vel[1]-A.vel[1])*ny2+(B.vel[2]-A.vel[2])*nz2;
+    if(vn<0){                                   // hanya bila saling mendekat
+      var j=-(1+0.55)*vn;                       // restitusi 0.55
+      var wa2=af&&bf?0.5:(af?1:0),wb2=af&&bf?0.5:(bf?1:0);
+      A.vel[0]-=j*nx2*wa2;A.vel[1]-=j*ny2*wa2;A.vel[2]-=j*nz2*wa2;
+      B.vel[0]+=j*nx2*wb2;B.vel[1]+=j*ny2*wb2;B.vel[2]+=j*nz2*wb2;
+      if(af){A.ws=A.ws*0.9+(Math.random()-0.5)*2;}
+      if(bf){B.ws=B.ws*0.9+(Math.random()-0.5)*2;}
+    }
+    var pen=1.02-dl;                             // dorong keluar dari tumpang-tindih
+    if(pen>0.003){
+      var wa3=af&&bf?0.5:(af?1:0),wb3=af&&bf?0.5:(bf?1:0);
+      var pd=Math.min(pen,0.06);
+      A.pos[0]-=pd*nx2*wa3;A.pos[1]-=pd*ny2*wa3;A.pos[2]-=pd*nz2*wa3;
+      B.pos[0]+=pd*nx2*wb3;B.pos[1]+=pd*ny2*wb3;B.pos[2]+=pd*nz2*wb3;
+    }
+  }
   // dorong lembut bila lintasan settle mendekat tumpuk dengan dadu lain
   for(var pi=0;pi<2;pi++)for(var i2=0;i2<N;i2++)for(var j3=i2+1;j3<N;j3++){
     var a=dice[i2],b2=dice[j3];
