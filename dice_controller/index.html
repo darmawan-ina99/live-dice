@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dice Controller</title>
+<style>
+  body{font-family:sans-serif;background:#111;color:#fff;text-align:center;padding:20px}
+  input{font-size:48px;width:180px;text-align:center;border-radius:12px;border:3px solid #666;background:#222;color:#fff}
+  button{font-size:28px;padding:12px 40px;border-radius:12px;border:none;background:#4CAF50;color:#fff;margin-top:16px}
+  #msg{margin-top:20px;font-size:18px}
+</style>
+</head>
+<body>
+<h2>🎲 Dice Controller</h2>
+<p>Masukkan 3 angka (APK v8) atau 4 angka (Luxe web: 3 hewan + 1 simbol)</p>
+<input id="r" maxlength="4" inputmode="numeric" placeholder="6314">
+<br>
+<button onclick="kirim()">KIRIM</button>
+<div id="msg"></div>
+<script>
+var URL = "https://api.base44.app/api/apps/6a55fcc9d4e788c46bb90341/functions/diceRemote";
+function kirim() {
+  var v = document.getElementById("r").value.trim();
+  var msg = document.getElementById("msg");
+  if (!/^[1-6]{3,4}$/.test(v)) { msg.textContent = "Harus 3-4 angka 1-6"; return; }
+  msg.textContent = "Mengirim...";
+  fetch(URL, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "set", kode: "DW-CTRL-2026", results: v }) })
+  .then(function(r) { return r.json(); })
+  .then(function(j) { msg.textContent = j.ok ? "✔ " + v + " tersimpan. Tunggu sentuhan di app dadu." : "✘ " + j.message; })
+  .catch(function(e) { msg.textContent = "✘ Gagal terhubung"; });
+}
+</script>
+</body>
+</html>
